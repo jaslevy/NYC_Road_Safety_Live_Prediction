@@ -1,0 +1,7 @@
+pandas
+sodapy
+dotenv
+openmeteo_requests
+requests_cache
+retry_requests
+time
