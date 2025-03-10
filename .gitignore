@@ -1,1 +1,8 @@
 .env
+# Ignore raw and processed data files
+static_data/raw/*.csv
+static_data/processed/*.csv
+
+# Ignore SQLite cache file
+.cache.sqlite
+
