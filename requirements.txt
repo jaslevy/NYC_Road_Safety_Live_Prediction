@@ -1,8 +1,11 @@
 pandas
 sodapy
-dotenv
+python-dotenv
 openmeteo_requests
 requests_cache
 retry_requests
-time
-subprocess
+fastapi
+uvicorn
+pydantic
+requests
+httpx
