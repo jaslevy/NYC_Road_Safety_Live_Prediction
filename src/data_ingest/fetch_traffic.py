@@ -1,26 +1,23 @@
+import joblib
 import pandas as pd
-from sodapy import Socrata
-from dotenv import load_dotenv
+import numpy as np
 import os
+import xgboost as xgb   # add this import
 
-load_dotenv()
-MyAppToken = os.getenv("NYC_APP_TOKEN")
-USERNAME = os.getenv("NYC_EMAIL")
-PASSWORD = os.getenv("NYC_PASSWORD")
+# Adjust path to wherever your .joblib lives
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "../models/xgboost_model.joblib")
+model = joblib.load(MODEL_PATH)  # this is a Booster
 
-client = Socrata("data.cityofnewyork.us", MyAppToken, username=USERNAME, password=PASSWORD)
+def predict_accident_probabilities(grid_df, date, borough_weather):
+    # … your feature‑prep code …
 
-metadata = client.get_metadata("h9gi-nx95")
+    feature_columns = ['hour', 'month', 'wdir', 'pres', 'wspd', 'tmin', 'tavg']
+    X = grid_df[feature_columns]
 
-try:
-    total_rows = int(metadata["columns"][0]["cachedContents"]["count"])
-    print(f"Total rows available: {total_rows}")
-except KeyError:
-    print("Warning: Could not find total row count in metadata. Fetching without limit.")
-    total_rows = None 
+    # === Replace predict_proba with native XGBoost predict on DMatrix ===
+    dmat = xgb.DMatrix(X)
+    y_proba = model.predict(dmat)  # returns probability for '1'
 
-results = client.get("h9gi-nx95", limit=total_rows)
-
-results_df = pd.DataFrame.from_records(results)
-
-results_df.to_csv("static_data/raw/traffic_data.csv", index=False)
+    # attach back to DataFrame
+    grid_df["crash_probability"] = y_proba
+    return grid_df[["latitude", "longitude", "crash_probability"]]

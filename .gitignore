@@ -6,3 +6,16 @@
 # Ignore SQLite cache file
 .cache.sqlite
 
+# Byte‑compiled / cache
+__pycache__/
+*.py[cod]
+
+# Environment artifacts
+.env
+venv/
+
+# Model weights, logs, etc.
+*.joblib
+*.log
+
+

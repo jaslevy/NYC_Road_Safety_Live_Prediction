@@ -12,8 +12,8 @@ from .models import (
     AccidentPredictionResponse,
     CoordinatePrediction
 )
-from src.preprocessing.nyc_grid import get_nyc_grid
-from src.modeling.inference import predict_accident_probabilities
+from preprocessing.nyc_grid import get_nyc_grid
+from modeling.inference import predict_accident_probabilities
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -217,11 +217,11 @@ async def predict_accidents(request: AccidentPredictionRequest):
 
             # Convert to response format
             predictions = [
-                CoordinatePrediction(
+               CoordinatePrediction(
                     lat=float(row["lat"]),
                     lon=float(row["lon"]),
                     borough=row["borough"],
-                    probability=float(row["accident_probability"])
+                    probability=float(row["probability"])
                 )
                 for _, row in predictions_df.iterrows()
             ]
