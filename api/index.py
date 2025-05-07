@@ -13,5 +13,13 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
+@app.get("/")
+async def root():
+    return {"message": "NYC Road Safety API is running"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
 # Include the router from endpoints.py
 app.include_router(router, prefix="/api")
