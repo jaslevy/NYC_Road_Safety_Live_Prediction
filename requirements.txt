@@ -9,3 +9,6 @@ uvicorn
 pydantic
 requests
 httpx
+flask
+folium
+watchdog==3.0.0
