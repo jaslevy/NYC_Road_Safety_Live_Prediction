@@ -52,10 +52,10 @@ def predict_accident_probabilities(
     grid_df["nearest_intersection_lat"] = grid_df["lat"]
     grid_df["nearest_intersection_lon"] = grid_df["lon"]
     # map to the real intersection ID
-    grid_df["nearest_intersection_id"] = grid_df.apply(
-        lambda r: find_nearest_intersection_id(r.lat, r.lon),
-        axis=1
-    )
+    #grid_df["nearest_intersection_id"] = grid_df.apply(
+       # lambda r: find_nearest_intersection_id(r.lat, r.lon),
+       # axis=1)
+    grid_df["nearest_intersection_id"] = 0
 
     # --- (4) assemble features in exactly the order the model expects ---
     feature_columns = [
