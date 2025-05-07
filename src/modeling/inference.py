@@ -1,11 +1,13 @@
+# src/modeling/inference.py
+
 import os
 import joblib
 import pandas as pd
-import xgboost as xgb
+from xgboost import XGBClassifier
 
-# 1) Load your trained Booster once at import time
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "../models/xgboost_model.joblib")
-model: xgb.core.Booster = joblib.load(MODEL_PATH)
+# 1) Load your trained sklearn‑wrapped XGBClassifier
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "../models/xgb_clf_full.joblib")
+model: XGBClassifier = joblib.load(MODEL_PATH)
 
 def predict_accident_probabilities(
     grid_df: pd.DataFrame,
@@ -13,80 +15,46 @@ def predict_accident_probabilities(
     borough_weather: dict
 ) -> pd.DataFrame:
     """
-    grid_df: DataFrame with columns ['lat','lon','borough']
-    borough_weather[b] may have:
-      - current keys:  'temperature' (°F), 'precipitation' (in), 'wind_speed' (mph)
-      - or historical keys: 'tavg'(°C), 'prcp'(mm), 'snow'(mm), 'wspd'(km/h), 'wdir'(°), 'pres'(hPa)
+    For each (lat,lon,borough) in grid_df, build the 13 features
+    that your XGBClassifier was trained on, call predict_proba,
+    and return (lat, lon, borough, probability) for the crash class.
     """
 
-    # --- 1) Date/time features ---
+    # 2) Time features
     dt = pd.to_datetime(date)
     grid_df["hour"]        = dt.hour
-    grid_df["day_of_week"] = dt.dayofweek
+    grid_df["day_of_week"] = dt.dayofweek          # 0=Mon … 6=Sun
     grid_df["month"]       = dt.month
-    grid_df["is_weekend"]  = (dt.dayofweek >= 5)
+    grid_df["is_weekend"]  = dt.dayofweek >= 5      # True for Sat/Sun
 
-    # --- 2) Pull raw weather fields (in whichever format we have) ---
-    def get_val(b, *keys, default=0.0):
-        d = borough_weather[b]
-        for k in keys:
-            if k in d:
-                return d[k]
-        return default
+    # 3) Weather features (these keys must match what your training code wrote into borough_weather)
+    grid_df["tavg"] = grid_df["borough"].map(lambda b: borough_weather[b]["tavg"])
+    grid_df["prcp"] = grid_df["borough"].map(lambda b: borough_weather[b]["prcp"])
+    grid_df["snow"] = grid_df["borough"].map(lambda b: borough_weather[b]["snow"])
+    grid_df["wdir"] = grid_df["borough"].map(lambda b: borough_weather[b]["wdir"])
+    grid_df["wspd"] = grid_df["borough"].map(lambda b: borough_weather[b]["wspd"])
+    grid_df["pres"] = grid_df["borough"].map(lambda b: borough_weather[b]["pres"])
 
-    # temperature
-    grid_df["raw_temp_F"]   = grid_df["borough"].map(lambda b: 
-        get_val(b, "temperature", "tavg", default=0.0)
-    )
-    # precipitation
-    grid_df["raw_prcp_in"]  = grid_df["borough"].map(lambda b: 
-        get_val(b, "precipitation", "prcp", default=0.0)
-    )
-    # snow
-    grid_df["raw_snow_in"]  = grid_df["borough"].map(lambda b: 
-        get_val(b, "snow", default=0.0)
-    )
-    # wind speed
-    grid_df["raw_wspd_mph"] = grid_df["borough"].map(lambda b: 
-        get_val(b, "wind_speed", "wspd", default=0.0)
-    )
-    # wind direction
-    grid_df["raw_wdir"]     = grid_df["borough"].map(lambda b: 
-        get_val(b, "wdir", "wind_direction", default=0.0)
-    )
-    # pressure
-    grid_df["raw_pres"]     = grid_df["borough"].map(lambda b: 
-        get_val(b, "pres", "pressure", default=1013.25)
-    )
-
-    # --- 3) Convert into model units ---
-    #   °F → °C    ; if the raw was already °C we'll get an off‐by‐factor but this covers both cases consistently
-    grid_df["tavg"] = (grid_df["raw_temp_F"] - 32.0) * (5.0/9.0)
-    #   in → mm
-    grid_df["prcp"] = grid_df["raw_prcp_in"] * 25.4
-    grid_df["snow"] = grid_df["raw_snow_in"] * 25.4
-    #   mph → km/h
-    grid_df["wspd"] = grid_df["raw_wspd_mph"] * 1.60934
-    #   direction & pressure already in correct units
-    grid_df["wdir"] = grid_df["raw_wdir"]
-    grid_df["pres"] = grid_df["raw_pres"]
-
-    # --- 4) Spatial features ---
+    # 4) Spatial features
+    #    (we use lat/lon as a stand‑in for “intersection” here)
     grid_df["nearest_intersection_lat"] = grid_df["lat"]
     grid_df["nearest_intersection_lon"] = grid_df["lon"]
+    # ← your model also trained on this numeric distance; for a grid point, it's zero
+    grid_df["distance_to_intersection_km"] = 0.0
 
-    # --- 5) Final feature matrix in EXACT order/model‐names ---
+    # 5) Pick off exactly the 13 columns your model expects, in the same order
     feature_columns = [
         "hour", "day_of_week", "month", "is_weekend",
         "tavg", "prcp", "snow",
         "wdir", "wspd", "pres",
-        "nearest_intersection_lat", "nearest_intersection_lon"
+        "nearest_intersection_lat", "nearest_intersection_lon",
+        "distance_to_intersection_km",
     ]
     X = grid_df[feature_columns]
 
-    # --- 6) Predict ---
-    dmat = xgb.DMatrix(X, feature_names=feature_columns)
-    grid_df["probability"] = model.predict(dmat)
+    # 6) Use the sklearn API to get P(crash=1)
+    proba = model.predict_proba(X)[:, 1]
 
-    # --- 7) Return only API‐spec fields ---
+    # 7) Attach and return only the fields your FastAPI schema needs
+    grid_df["probability"] = proba
     return grid_df[["lat", "lon", "borough", "probability"]]

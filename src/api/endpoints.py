@@ -207,7 +207,7 @@ async def predict_accidents(request: AccidentPredictionRequest):
             logger.info(f"NYC grid loaded: {len(grid_df)} points")
 
             # Use a smaller subset of the grid for performance (sampling 5%)
-            sampled_grid = grid_df.sample(frac=0.9, random_state=42)
+            sampled_grid = grid_df.sample(n=500, random_state=42)
             logger.info(f"Using sampled grid with {len(sampled_grid)} points")
 
             # Predict accident probabilities for each coordinate
