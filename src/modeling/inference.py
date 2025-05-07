@@ -6,6 +6,9 @@ import pandas as pd
 import xgboost as xgb
 from preprocessing.intersections import intersections_df
 from geopy.distance import great_circle
+from sklearn.preprocessing import QuantileTransformer
+import numpy as np
+
 
 # 1) Load your trained Booster once at import time
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "../models/xgb_clf_full.joblib")
@@ -63,11 +66,16 @@ def predict_accident_probabilities(
         "nearest_intersection_id"
     ]
     X = grid_df[feature_columns]
+    # 1) get raw probabilities
+    raw_proba = model.predict_proba(X)[:, 1].reshape(-1, 1)
+    # 2) normal‐quantile transform → z‑scores
+    qt = QuantileTransformer(output_distribution="normal", random_state=42)
+    z_scores = qt.fit_transform(raw_proba).flatten()
+    # 3) map z‑scores to (0,1) via Normal CDF
+    from scipy.stats import norm
+    scaled = norm.cdf(z_scores)
 
-    # --- (5) predict ---
-    # since this is an sklearn-wrapped XGBClassifier:
-    proba = model.predict_proba(X)[:, 1]
-    grid_df["probability"] = proba
+    grid_df["probability"] = scaled
+    
 
-    # --- (6) return only the API‐spec fields ---
     return grid_df[["lat", "lon", "borough", "probability"]]
