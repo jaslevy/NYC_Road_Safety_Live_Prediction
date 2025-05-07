@@ -12,3 +12,4 @@ httpx
 flask
 folium
 watchdog==3.0.0
+httpxgeopy==2.4.1
