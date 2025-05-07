@@ -3,68 +3,79 @@
 import os
 import joblib
 import pandas as pd
+import xgboost as xgb
+from preprocessing.intersections import intersections_df
+from geopy.distance import great_circle
+from sklearn.preprocessing import QuantileTransformer
 import numpy as np
-from xgboost import XGBClassifier
 
-# 1) Load your trained sklearn‑wrapped XGBClassifier
+
+# 1) Load your trained Booster once at import time
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "../models/xgb_clf_full.joblib")
+model: xgb.XGBClassifier = joblib.load(MODEL_PATH)
 
-# Try to load the model, if not available, use a dummy model for testing
-try:
-    model: XGBClassifier = joblib.load(MODEL_PATH)
-except FileNotFoundError:
-    print("Warning: Model file not found. Using dummy model for testing.")
-    # Create a dummy model that returns random probabilities
-    model = type('DummyModel', (), {
-        'predict_proba': lambda self, X: np.column_stack([1 - np.random.random(len(X)), np.random.random(len(X))])
-    })()
+def find_nearest_intersection_id(lat, lon):
+    # compute the distance to every known intersection
+    dists = intersections_df.apply(
+        lambda r: great_circle((lat, lon), (r.lat, r.lon)).km,
+        axis=1
+    )
+    # pick the ID of the closest one
+    return intersections_df.loc[dists.idxmin(), 'nearest_intersection_id']
+
+def prepare_grid(grid_df):
+    # for each point in your payload, map to the nearest intersection
+    grid_df['nearest_intersection_id'] = grid_df.apply(
+        lambda r: find_nearest_intersection_id(r.lat, r.lon),
+        axis=1
+    )
+    return grid_df
 
 def predict_accident_probabilities(
     grid_df: pd.DataFrame,
     date: str,
     borough_weather: dict
 ) -> pd.DataFrame:
-    """
-    For each (lat,lon,borough) in grid_df, build the 13 features
-    that your XGBClassifier was trained on, call predict_proba,
-    and return (lat, lon, borough, probability) for the crash class.
-    """
-
-    # 2) Time features
+    # --- (1) date/time features ---
     dt = pd.to_datetime(date)
     grid_df["hour"]        = dt.hour
-    grid_df["day_of_week"] = dt.dayofweek          # 0=Mon … 6=Sun
+    grid_df["day_of_week"] = dt.dayofweek
     grid_df["month"]       = dt.month
-    grid_df["is_weekend"]  = dt.dayofweek >= 5      # True for Sat/Sun
+    grid_df["is_weekend"]  = dt.dayofweek >= 5
 
-    # 3) Weather features (these keys must match what your training code wrote into borough_weather)
-    grid_df["tavg"] = grid_df["borough"].map(lambda b: borough_weather[b]["tavg"])
-    grid_df["prcp"] = grid_df["borough"].map(lambda b: borough_weather[b]["prcp"])
-    grid_df["snow"] = grid_df["borough"].map(lambda b: borough_weather[b]["snow"])
-    grid_df["wdir"] = grid_df["borough"].map(lambda b: borough_weather[b]["wdir"])
-    grid_df["wspd"] = grid_df["borough"].map(lambda b: borough_weather[b]["wspd"])
-    grid_df["pres"] = grid_df["borough"].map(lambda b: borough_weather[b]["pres"])
+    # --- (2) weather features from API (already converted to model units upstream) ---
+    for feat in ("tavg", "prcp", "snow", "wdir", "wspd", "pres"):
+        grid_df[feat] = grid_df["borough"].map(lambda b: borough_weather[b][feat])
 
-    # 4) Spatial features
-    #    (we use lat/lon as a stand‑in for "intersection" here)
+    # --- (3) spatial features ---
+    # raw lat/lon of grid cell
     grid_df["nearest_intersection_lat"] = grid_df["lat"]
     grid_df["nearest_intersection_lon"] = grid_df["lon"]
-    # ← your model also trained on this numeric distance; for a grid point, it's zero
-    grid_df["distance_to_intersection_km"] = 0.0
+    # map to the real intersection ID
+    #grid_df["nearest_intersection_id"] = grid_df.apply(
+       # lambda r: find_nearest_intersection_id(r.lat, r.lon),
+       # axis=1)
+    grid_df["nearest_intersection_id"] = 0
 
-    # 5) Pick off exactly the 13 columns your model expects, in the same order
+    # --- (4) assemble features in exactly the order the model expects ---
     feature_columns = [
-        "hour", "day_of_week", "month", "is_weekend",
-        "tavg", "prcp", "snow",
-        "wdir", "wspd", "pres",
-        "nearest_intersection_lat", "nearest_intersection_lon",
-        "distance_to_intersection_km",
+        "hour","day_of_week","month","is_weekend",
+        "tavg","prcp","snow",
+        "wdir","wspd","pres",
+        "nearest_intersection_lat","nearest_intersection_lon",
+        "nearest_intersection_id"
     ]
     X = grid_df[feature_columns]
+    # 1) get raw probabilities
+    raw_proba = model.predict_proba(X)[:, 1].reshape(-1, 1)
+    # 2) normal‐quantile transform → z‑scores
+    qt = QuantileTransformer(output_distribution="normal", random_state=42)
+    z_scores = qt.fit_transform(raw_proba).flatten()
+    # 3) map z‑scores to (0,1) via Normal CDF
+    from scipy.stats import norm
+    scaled = norm.cdf(z_scores)
 
-    # 6) Use the sklearn API to get P(crash=1)
-    proba = model.predict_proba(X)[:, 1]
+    grid_df["probability"] = scaled
 
-    # 7) Attach and return only the fields your FastAPI schema needs
-    grid_df["probability"] = proba
+
     return grid_df[["lat", "lon", "borough", "probability"]]

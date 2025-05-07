@@ -15,3 +15,4 @@ folium
 watchdog==3.0.0
 pytest==8.0.0
 requests==2.31.0
+httpxgeopy==2.4.1
