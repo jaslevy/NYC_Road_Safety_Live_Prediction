@@ -12,8 +12,8 @@ from .models import (
     AccidentPredictionResponse,
     CoordinatePrediction
 )
-from preprocessing.nyc_grid import get_nyc_grid
-from modeling.inference import predict_accident_probabilities
+from src.preprocessing.nyc_grid import get_nyc_grid
+from src.modeling.inference import predict_accident_probabilities
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
