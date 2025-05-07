@@ -15,16 +15,7 @@ __pycache__/
 venv/
 
 # Model weights, logs, etc.
-*.joblib
 *.log
-
-
-
-# ignore large balanced dataset
-final_balanced.csv
-
-# ignore large balanced dataset
-final_balanced.csv
 
 # ignore large balanced dataset
 data/final_balanced.csv
