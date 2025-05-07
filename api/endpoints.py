@@ -34,6 +34,18 @@ class AccidentPredictionResponse(BaseModel):
 
 router = APIRouter()
 
+@router.get("/health")
+async def health_check():
+    """
+    Endpoint to check the health status of the API.
+    Returns a 200 OK response if the API is healthy.
+    """
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "service": "nyc-accident-prediction-api"
+    }
+
 BOROUGHS = {
     "Manhattan": (40.776676, -73.971321),
     "Brooklyn": (40.650002, -73.949997),
