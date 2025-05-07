@@ -8,4 +8,4 @@ fastapi
 uvicorn
 pydantic
 requests
-httpx
+httpxgeopy==2.4.1

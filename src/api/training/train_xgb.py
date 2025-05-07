@@ -42,7 +42,7 @@ model = XGBClassifier(
     random_state=RANDOM_SEED,
     eval_metric="auc",
     use_label_encoder=False,
-    n_estimators=500,
+    n_estimators=5000,
     n_jobs=4
 )
 

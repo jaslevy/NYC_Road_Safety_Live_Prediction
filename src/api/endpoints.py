@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
 import httpx
 import asyncio
+import json
+import pandas as pd
 from datetime import datetime
 import numpy as np
 import logging
@@ -14,6 +16,10 @@ from .models import (
 )
 from preprocessing.nyc_grid import get_nyc_grid
 from modeling.inference import predict_accident_probabilities
+from geopy.distance import great_circle
+from preprocessing.intersections import intersections_df
+import os
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +34,12 @@ BOROUGHS = {
     "Staten Island": (40.579021, -74.151535),
     "Bronx": (40.837048, -73.865433)
 }
+def _assign_borough(lat: float, lon: float) -> str:
+    # find the borough whose centroid is closest
+    return min(
+        BOROUGHS.keys(),
+        key=lambda b: great_circle((lat, lon), BOROUGHS[b]).km
+    )
 
 async def fetch_borough_weather(client: httpx.AsyncClient, borough: str, lat: float, lon: float, date_str: Optional[str] = None):
     """Fetch weather data for a single borough"""
@@ -202,19 +214,23 @@ async def predict_accidents(request: AccidentPredictionRequest):
 
             logger.info(f"Weather data retrieved successfully for all boroughs")
 
-            # Get the NYC grid
-            grid_df = get_nyc_grid()
-            logger.info(f"NYC grid loaded: {len(grid_df)} points")
+            # JSON INFO
+            with open(os.path.join(os.path.dirname(__file__), "data", "intersections_enriched.json")) as f:
+                enriched = json.load(f)
 
-            # Use a smaller subset of the grid for performance (sampling 5%)
-            sampled_grid = grid_df.sample(n=500, random_state=42)
-            logger.info(f"Using sampled grid with {len(sampled_grid)} points")
+            # 2) Build your grid_df
+            grid_df = (
+            pd.DataFrame(enriched)
+            .rename(columns={
+          "lat": "lat",
+          "lon": "lon",
+          "nearest_borough": "borough"
+            })
+            .sample(n=500, random_state=42)
+            .reset_index(drop=True))
 
-            # Predict accident probabilities for each coordinate
-            logger.info("Starting accident probability prediction")
-            predictions_df = predict_accident_probabilities(sampled_grid, date_str, borough_weather)
-            logger.info(f"Prediction complete for {len(predictions_df)} points")
-
+            predictions_df = predict_accident_probabilities(grid_df, date_str, borough_weather)
+            
             # Convert to response format
             predictions = [
                CoordinatePrediction(
