@@ -13,8 +13,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add router
-app.include_router(router)
+# Add router with /api prefix
+app.include_router(router, prefix="/api")
 
 @app.get("/")
 async def root():

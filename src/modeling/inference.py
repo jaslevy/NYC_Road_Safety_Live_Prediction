@@ -4,15 +4,47 @@ import os
 import joblib
 import pandas as pd
 import xgboost as xgb
-from preprocessing.intersections import intersections_df
+from src.preprocessing.intersections import intersections_df
 from geopy.distance import great_circle
 from sklearn.preprocessing import QuantileTransformer
 import numpy as np
+import logging
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # 1) Load your trained Booster once at import time
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "../models/xgb_clf_full.joblib")
-model: xgb.XGBClassifier = joblib.load(MODEL_PATH)
+
+# Create a dummy model for development/testing
+def create_dummy_model():
+    logger.warning("Using dummy model for development/testing")
+    dummy_model = xgb.XGBClassifier(
+        objective='binary:logistic',  # For binary classification
+        base_score=0.5,  # Set base_score to 0.5 for binary classification
+        random_state=42
+    )
+    # Create dummy data and fit the model
+    X = pd.DataFrame([[0] * 13], columns=[
+        "hour","day_of_week","month","is_weekend",
+        "tavg","prcp","snow","wdir","wspd","pres",
+        "nearest_intersection_lat","nearest_intersection_lon",
+        "nearest_intersection_id"
+    ])
+    y = pd.Series([0])
+    return dummy_model.fit(X, y)
+
+try:
+    if os.path.exists(MODEL_PATH):
+        model: xgb.XGBClassifier = joblib.load(MODEL_PATH)
+        logger.info(f"Loaded model from {MODEL_PATH}")
+    else:
+        logger.warning(f"Model file not found at {MODEL_PATH}")
+        model = create_dummy_model()
+except Exception as e:
+    logger.error(f"Error loading model: {str(e)}")
+    model = create_dummy_model()
 
 def find_nearest_intersection_id(lat, lon):
     # compute the distance to every known intersection
